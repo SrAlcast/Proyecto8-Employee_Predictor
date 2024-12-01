@@ -1,4 +1,4 @@
-# 🌟 Employee Predictor: Unlocking Workplace Insights 
+# 🌟 Employee Predictor: Unlock Workplace Insights 
 
 ![Employee Predictor](https://raw.githubusercontent.com/SrAlcast/Proyecto8-Employee_Predictor/refs/heads/main/src/imagen%20README.jpg?token=GHSAT0AAAAAACW5JJGZF5T2FQBDTDASBJMEZ2MVEKQ)
 
