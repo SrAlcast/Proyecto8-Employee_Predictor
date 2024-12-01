@@ -1,5 +1,7 @@
 # 🌟 Employee Predictor: Unlocking Workplace Insights 
 
+![Employee Predictor](https://raw.githubusercontent.com/SrAlcast/Proyecto8-Employee_Predictor/refs/heads/main/src/imagen%20README.jpg?token=GHSAT0AAAAAACW5JJGZF5T2FQBDTDASBJMEZ2MVEKQ)
+
 ## 📖 Introducción
 
 La retención de empleados es un desafío crítico para las organizaciones de todo el mundo. Comprender por qué los empleados deciden quedarse o irse puede impactar significativamente el desempeño y la cultura de una empresa. Este proyecto tiene como objetivo predecir la retención de empleados utilizando técnicas avanzadas de machine learning, revelando los factores clave que impulsan la satisfacción y las decisiones de los empleados.
@@ -12,10 +14,12 @@ El repositorio está organizado de la siguiente manera:
 
 ```
 ├── data/                # Conjuntos de datos crudos y procesados
+├── encoders/            # Pkl para estandarizar y encodear datos
 ├── models/              # Modelos de machine learning entrenados
 ├── notebooks/           # Notebooks de Jupyter para análisis y modelado
 ├── results/             # Datos procesados y resultados
 ├── src/                 # Código fuente para preprocesamiento y modelado
+├── streamlit/           # Código para la ejecucion de streamlit con el modelo
 └── README.md            # Descripción del proyecto
 ```
 
