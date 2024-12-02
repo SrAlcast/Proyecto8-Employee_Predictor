@@ -8,6 +8,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn import tree
+import shap
 
 # Para realizar la clasificación y la evaluación del modelo
 # -----------------------------------------------------------------------
@@ -29,9 +30,8 @@ import pickle
 
 # Para realizar cross validation
 # -----------------------------------------------------------------------
-from sklearn.model_selection import StratifiedKFold, cross_val_score, KFold
-from sklearn.preprocessing import KBinsDiscretizer
 from sklearn.metrics import roc_curve, roc_auc_score
+
 
 class AnalisisModelosClasificacion:
     def __init__(self, dataframe, variable_dependiente):
@@ -64,10 +64,11 @@ class AnalisisModelosClasificacion:
         # Parámetros predeterminados por modelo
         parametros_default = {
             "logistic_regression": {
-                'penalty': ['l1', 'l2', 'elasticnet', 'none'],
-                'C': [0.01, 0.1, 1, 10, 100],
-                'solver': ['liblinear', 'saga'],
-                'max_iter': [100, 200, 500]
+                'penalty': ['l1', 'l2', 'elasticnet'],
+                'C': [0.01, 0.1, 1, 10, 100],  # Regularización
+                'solver': ['liblinear', 'saga'],  # Para 'l1' y 'l2'
+                'l1_ratio': [0.1, 0.5, 0.9],  # Necesario solo para 'elasticnet'
+                'max_iter': [100, 200, 500]  # Iteraciones
             },
             "tree": {
                 'max_depth': [3, 5, 7, 10],
@@ -115,7 +116,7 @@ class AnalisisModelosClasificacion:
         self.resultados[modelo_nombre]["pred_test"] = grid_search.best_estimator_.predict(self.X_test)
 
         # Guardar el modelo
-        with open(f'../results/mejor_modelo_{modelo_nombre}.pkl', 'wb') as f:
+        with open(f'../models/mejor_modelo_{modelo_nombre}.pkl', 'wb') as f:
             pickle.dump(grid_search.best_estimator_, f)
 
     def calcular_metricas(self, modelo_nombre):
@@ -233,3 +234,44 @@ class AnalisisModelosClasificacion:
         plt.legend(loc="lower right")
         plt.grid()
         plt.show()
+
+    def plot_shap_summary(self, modelo_nombre):
+        """
+        Genera un SHAP summary plot para el modelo seleccionado.
+        Asegura que todas las columnas del dataframe sean utilizadas.
+        """
+        if modelo_nombre not in self.resultados:
+            raise ValueError(f"Modelo '{modelo_nombre}' no reconocido.")
+
+        modelo = self.resultados[modelo_nombre]["mejor_modelo"]
+
+        if modelo is None:
+            raise ValueError(f"Debe ajustar el modelo '{modelo_nombre}' antes de generar el SHAP plot.")
+
+        # Usar TreeExplainer para modelos basados en árboles
+        if modelo_nombre in ["tree", "random_forest", "gradient_boosting", "xgboost"]:
+            explainer = shap.TreeExplainer(modelo)
+            shap_values = explainer.shap_values(self.X_test)
+
+            # Verificar si los SHAP values tienen múltiples clases (dimensión 3)
+            if isinstance(shap_values, list):
+                shap_values = shap_values[1]  # Para modelos binarios
+            elif len(shap_values.shape) == 3:
+                shap_values = shap_values[:, :, 1]  # Clase positiva
+        else:
+            # Usar el explicador genérico para otros modelos
+            explainer = shap.Explainer(modelo, self.X_test, check_additivity=False)
+            shap_values = explainer(self.X_test).values
+
+        # Incluir todas las columnas del dataframe
+        if hasattr(self, "X"):  # Si tienes un dataframe de referencia
+            full_columns = self.X.columns
+        else:
+            full_columns = self.X_test.columns  # Usa las columnas actuales
+
+        # Asegurarte de que todas las columnas estén presentes
+        if len(full_columns) != self.X_test.shape[1]:
+            raise ValueError("El dataframe no contiene todas las columnas originales.")
+
+        # Generar el summary plot para todas las columnas
+        shap.summary_plot(shap_values, self.X_test, feature_names=full_columns)

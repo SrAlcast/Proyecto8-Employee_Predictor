@@ -11,10 +11,6 @@ from sklearn import tree
 
 # Para realizar la clasificación y la evaluación del modelo
 # -----------------------------------------------------------------------
-from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.model_selection import train_test_split, learning_curve, GridSearchCV, cross_val_score, StratifiedKFold, KFold
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -22,214 +18,170 @@ from sklearn.metrics import (
     f1_score,
     roc_auc_score,
     cohen_kappa_score,
-    confusion_matrix
+    confusion_matrix,
+    roc_curve
 )
 import xgboost as xgb
-import pickle
+from sklearn.metrics import roc_curve, auc
 
-# Para realizar cross validation
-# -----------------------------------------------------------------------
-from sklearn.model_selection import StratifiedKFold, cross_val_score, KFold
-from sklearn.preprocessing import KBinsDiscretizer
-from sklearn.metrics import roc_curve, roc_auc_score
+def metricas(y_train, y_train_pred, y_test, y_test_pred, prob_train=None, prob_test=None):
+    """
+    Genera una tabla comparativa de métricas entre los conjuntos de entrenamiento y prueba.
 
-class AnalisisModelosClasificacion:
-    def __init__(self, dataframe, variable_dependiente):
-        self.dataframe = dataframe
-        self.variable_dependiente = variable_dependiente
-        self.X = dataframe.drop(variable_dependiente, axis=1)
-        self.y = dataframe[variable_dependiente]
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-            self.X, self.y, train_size=0.8, random_state=42, shuffle=True)
+    Parámetros:
+        y_train (array-like): Valores reales del conjunto de entrenamiento.
+        y_train_pred (array-like): Predicciones del modelo en el conjunto de entrenamiento.
+        y_test (array-like): Valores reales del conjunto de prueba.
+        y_test_pred (array-like): Predicciones del modelo en el conjunto de prueba.
+        prob_train (array-like, opcional): Probabilidades de predicción en el conjunto de entrenamiento.
+        prob_test (array-like, opcional): Probabilidades de predicción en el conjunto de prueba.
 
-        # Diccionario de modelos y resultados
-        self.modelos = {
-            "logistic_regression": LogisticRegression(),
-            "tree": DecisionTreeClassifier(),
-            "random_forest": RandomForestClassifier(),
-            "gradient_boosting": GradientBoostingClassifier(),
-            "xgboost": xgb.XGBClassifier()
-        }
-        self.resultados = {nombre: {"mejor_modelo": None, "pred_train": None, "pred_test": None} for nombre in self.modelos}
+    Retorna:
+        pd.DataFrame: DataFrame con las métricas comparadas para entrenamiento y prueba.
+    """
+    # Métricas para conjunto de entrenamiento
+    metricas_train = {
+        "accuracy": accuracy_score(y_train, y_train_pred),
+        "precision": precision_score(y_train, y_train_pred, average='weighted', zero_division=0),
+        "recall": recall_score(y_train, y_train_pred, average='weighted', zero_division=0),
+        "f1": f1_score(y_train, y_train_pred, average='weighted', zero_division=0),
+        "kappa": cohen_kappa_score(y_train, y_train_pred)
+    }
 
-    def ajustar_modelo(self, modelo_nombre, param_grid=None, cross_validation = 5):
-        """
-        Ajusta el modelo seleccionado con GridSearchCV.
-        """
-        if modelo_nombre not in self.modelos:
-            raise ValueError(f"Modelo '{modelo_nombre}' no reconocido.")
-        
-        modelo = self.modelos[modelo_nombre]
+    # Métricas para conjunto de prueba
+    metricas_test = {
+        "accuracy": accuracy_score(y_test, y_test_pred),
+        "precision": precision_score(y_test, y_test_pred, average='weighted', zero_division=0),
+        "recall": recall_score(y_test, y_test_pred, average='weighted', zero_division=0),
+        "f1": f1_score(y_test, y_test_pred, average='weighted', zero_division=0),
+        "kappa": cohen_kappa_score(y_test, y_test_pred)
+    }
 
-        # Parámetros predeterminados por modelo
-        parametros_default = {
-            "logistic_regression": {
-                'penalty': ['l1', 'l2', 'elasticnet', 'none'],
-                'C': [0.01, 0.1, 1, 10, 100],
-                'solver': ['liblinear', 'saga'],
-                'max_iter': [100, 200, 500]
-            },
-            "tree": {
-                'max_depth': [3, 5, 7, 10],
-                'min_samples_split': [2, 5, 10],
-                'min_samples_leaf': [1, 2, 4]
-            },
-            "random_forest": {
-                'n_estimators': [50, 100, 200],
-                'max_depth': [None, 10, 20, 30],
-                'min_samples_split': [2, 5, 10],
-                'min_samples_leaf': [1, 2, 4],
-                'max_features': ['auto', 'sqrt', 'log2']
-            },
-            "gradient_boosting": {
-                'n_estimators': [100, 200],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'max_depth': [3, 4, 5],
-                'min_samples_split': [2, 5, 10],
-                'min_samples_leaf': [1, 2, 4],
-                'subsample': [0.8, 1.0]
-            },
-            "xgboost": {
-                'n_estimators': [100, 200],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'max_depth': [3, 4, 5],
-                'min_child_weight': [1, 3, 5],
-                'subsample': [0.8, 1.0],
-                'colsample_bytree': [0.8, 1.0]
-            }
-        }
+    # Combinar métricas en un DataFrame
+    return pd.DataFrame({"train": metricas_train, "test": metricas_test})
 
-        if param_grid is None:
-            param_grid = parametros_default.get(modelo_nombre, {})
+def combinar_metricas(model_names, *dfs):
+    """
+    Transforma métricas de varios modelos reorganizando las columnas 'train' y 'test' como filas,
+    mientras que las métricas se convierten en columnas. Agrega una columna con los nombres de los modelos.
 
-        # Ajuste del modelo
-        grid_search = GridSearchCV(estimator=modelo, 
-                                   param_grid=param_grid, 
-                                   cv=cross_validation, 
-                                   scoring='accuracy',
-                                   n_jobs=-1)
-        
-        grid_search.fit(self.X_train, self.y_train)
-        self.resultados[modelo_nombre]["mejor_modelo"] = grid_search.best_estimator_
-        self.resultados[modelo_nombre]["pred_train"] = grid_search.best_estimator_.predict(self.X_train)
-        self.resultados[modelo_nombre]["pred_test"] = grid_search.best_estimator_.predict(self.X_test)
+    Parámetros:
+        model_names (list): Lista de nombres de modelos en el orden correspondiente a los DataFrames.
+        *dfs (pd.DataFrame): Varios DataFrames, uno por cada modelo. Cada DataFrame debe tener:
+                             - Filas: Métricas (e.g., `accuracy`, `precision`, `recall`, etc.).
+                             - Columnas: `train` y `test`.
 
-        # Guardar el modelo
-        with open(f'mejor_modelo_{modelo_nombre}.pkl', 'wb') as f:
-            pickle.dump(grid_search.best_estimator_, f)
+    Retorna:
+        pd.DataFrame: DataFrame transformado con métricas como columnas, `Train` y `Test` como filas,
+                      y una columna adicional para el nombre del modelo.
+    """
+    # Validar que el número de nombres coincida con el número de DataFrames
+    if len(model_names) != len(dfs):
+        raise ValueError("El número de nombres de modelos debe coincidir con el número de DataFrames.")
 
-    def calcular_metricas(self, modelo_nombre):
-        """
-        Calcula métricas de rendimiento para el modelo seleccionado, incluyendo AUC y Kappa.
-        """
-        if modelo_nombre not in self.resultados:
-            raise ValueError(f"Modelo '{modelo_nombre}' no reconocido.")
-        
-        pred_train = self.resultados[modelo_nombre]["pred_train"]
-        pred_test = self.resultados[modelo_nombre]["pred_test"]
-
-        if pred_train is None or pred_test is None:
-            raise ValueError(f"Debe ajustar el modelo '{modelo_nombre}' antes de calcular métricas.")
-        
-        # Calcular probabilidades para AUC (si el modelo las soporta)
-        modelo = self.resultados[modelo_nombre]["mejor_modelo"]
-        if hasattr(modelo, "predict_proba"):
-            prob_train = modelo.predict_proba(self.X_train)[:, 1]
-            prob_test = modelo.predict_proba(self.X_test)[:, 1]
-        else:
-            prob_train = prob_test = None  # Si no hay probabilidades, AUC no será calculado
-
-        # Métricas para conjunto de entrenamiento
-        metricas_train = {
-            "accuracy": accuracy_score(self.y_train, pred_train),
-            "precision": precision_score(self.y_train, pred_train, average='weighted', zero_division=0),
-            "recall": recall_score(self.y_train, pred_train, average='weighted', zero_division=0),
-            "f1": f1_score(self.y_train, pred_train, average='weighted', zero_division=0),
-            "kappa": cohen_kappa_score(self.y_train, pred_train),
-            "auc": roc_auc_score(self.y_train, prob_train) if prob_train is not None else None
-        }
-
-        # Métricas para conjunto de prueba
-        metricas_test = {
-            "accuracy": accuracy_score(self.y_test, pred_test),
-            "precision": precision_score(self.y_test, pred_test, average='weighted', zero_division=0),
-            "recall": recall_score(self.y_test, pred_test, average='weighted', zero_division=0),
-            "f1": f1_score(self.y_test, pred_test, average='weighted', zero_division=0),
-            "kappa": cohen_kappa_score(self.y_test, pred_test),
-            "auc": roc_auc_score(self.y_test, prob_test) if prob_test is not None else None
-        }
-
-        # Combinar métricas en un DataFrame
-        return pd.DataFrame({"train": metricas_train, "test": metricas_test})
-
-    def plot_matriz_confusion(self, modelo_nombre):
-        """
-        Plotea la matriz de confusión para el modelo seleccionado.
-        """
-        if modelo_nombre not in self.resultados:
-            raise ValueError(f"Modelo '{modelo_nombre}' no reconocido.")
-
-        pred_test = self.resultados[modelo_nombre]["pred_test"]
-
-        if pred_test is None:
-            raise ValueError(f"Debe ajustar el modelo '{modelo_nombre}' antes de calcular la matriz de confusión.")
-
-        # Matriz de confusión
-        matriz_conf = confusion_matrix(self.y_test, pred_test)
-        plt.figure(figsize=(8, 6))
-        sns.heatmap(matriz_conf, annot=True, fmt='g', cmap='Blues')
-        plt.title(f"Matriz de Confusión ({modelo_nombre})")
-        plt.xlabel("Predicción")
-        plt.ylabel("Valor Real")
-        plt.show()
+    # Lista para almacenar los DataFrames transformados
+    dfs_transformados = []
     
-    def importancia_predictores(self, modelo_nombre):
-        """
-        Calcula y grafica la importancia de las características para el modelo seleccionado.
-        """
-        if modelo_nombre not in self.resultados:
-            raise ValueError(f"Modelo '{modelo_nombre}' no reconocido.")
+    for model_name, df in zip(model_names, dfs):
+        # Transponer el DataFrame para que las métricas sean columnas
+        df_transposed = df.T
+        df_transposed['Modelo'] = model_name  # Agregar la columna con el nombre del modelo
+        dfs_transformados.append(df_transposed)
+
+    # Combinar todos los DataFrames transformados
+    df_combinado = pd.concat(dfs_transformados, axis=0, ignore_index=False)
+
+    # Reorganizar columnas para que 'Modelo' sea la última columna
+    columnas_reorganizadas = list(df_combinado.columns[:-1]) + ['Modelo']
+    df_combinado = df_combinado[columnas_reorganizadas]
+
+    return df_combinado
+
+def comparador_curvas_auc(modelos, X_test, y_test, nombres_modelos):
+    """
+    Genera una visualización de las curvas AUC (ROC) para comparar cinco modelos.
+    
+    Parámetros:
+        modelos (list): Lista de los cinco modelos ajustados.
+        X_test (array-like): Conjunto de características de prueba.
+        y_test (array-like): Etiquetas reales de prueba.
+        nombres_modelos (list): Lista de nombres para cada modelo (en el mismo orden que `modelos`).
+    
+    Retorna:
+        None: Muestra un gráfico con las curvas ROC para los modelos.
+    """
+    if len(modelos) != 5 or len(nombres_modelos) != 5:
+        raise ValueError("Debe proporcionar exactamente cinco modelos y cinco nombres.")
+
+    plt.figure(figsize=(10, 8))
+
+    for i, modelo in enumerate(modelos):
+        if not hasattr(modelo, "predict_proba"):
+            raise ValueError(f"El modelo '{nombres_modelos[i]}' no tiene el método 'predict_proba'.")
         
-        modelo = self.resultados[modelo_nombre]["mejor_modelo"]
-        if modelo is None:
-            raise ValueError(f"Debe ajustar el modelo '{modelo_nombre}' antes de calcular importancia de características.")
+        # Obtener las probabilidades predichas
+        probas_test = modelo.predict_proba(X_test)[:, 1]
         
-        # Verificar si el modelo tiene importancia de características
-        if hasattr(modelo, "feature_importances_"):
-            importancia = modelo.feature_importances_
-        elif modelo_nombre == "logistic_regression" and hasattr(modelo, "coef_"):
-            importancia = modelo.coef_[0]
-        else:
-            print(f"El modelo '{modelo_nombre}' no soporta la importancia de características.")
-            return
+        # Calcular la curva ROC
+        fpr, tpr, _ = roc_curve(y_test, probas_test)
+        roc_auc = auc(fpr, tpr)
         
-        # Crear DataFrame y graficar
-        importancia_df = pd.DataFrame({
-            "Feature": self.X.columns,
-            "Importance": importancia
-        }).sort_values(by="Importance", ascending=False)
-
-        plt.figure(figsize=(10, 6))
-        sns.barplot(x="Importance", y="Feature", data=importancia_df, palette="viridis")
-        plt.title(f"Importancia de Características ({modelo_nombre})")
-        plt.xlabel("Importancia")
-        plt.ylabel("Características")
-        plt.show()
-
-    def hacer_roc_curve(self, modelo_nombre):
-        # Calcular los puntos de la curva ROC
-        fpr, tpr, thresholds = roc_curve(self.y_test, self.resultados[modelo_nombre]["pred_test"])
-
-        # Calcular el AUC
-        auc = roc_auc_score(self.y_test, self.resultados[modelo_nombre]["pred_test"])
-
         # Graficar la curva ROC
-        plt.figure(figsize=(8, 6))
-        plt.plot(fpr, tpr, label=f"ROC Curve (AUC = {auc:.2f})")
-        plt.plot([0, 1], [0, 1], 'k--', label="Random Guess")
-        plt.xlabel("False Positive Rate (FPR)")
-        plt.ylabel("True Positive Rate (TPR)")
-        plt.title("ROC Curve")
-        plt.legend(loc="lower right")
-        plt.grid()
-        plt.show()
+        plt.plot(fpr, tpr, lw=2, label=f"{nombres_modelos[i]} (AUC = {roc_auc:.2f})")
+    
+    # Agregar líneas de referencia y etiquetas
+    plt.plot([0, 1], [0, 1], color="gray", linestyle="--", lw=2, label="Referencia")
+    plt.xlabel("Tasa de Falsos Positivos (FPR)")
+    plt.ylabel("Tasa de Verdaderos Positivos (TPR)")
+    plt.title("Comparación de Curvas ROC para 5 Modelos")
+    plt.legend(loc="lower right")
+    plt.grid(alpha=0.3)
+    plt.show()
+
+def comparar_matrices_confusion(X_train, y_train, X_test, y_test, modelos, nombres_modelos, figsize=(12, 8)):
+    """
+    Compara las matrices de confusión de varios modelos y muestra valores absolutos.
+
+    Parámetros:
+        X_train (array-like): Conjunto de características de entrenamiento.
+        y_train (array-like): Etiquetas reales de entrenamiento.
+        X_test (array-like): Conjunto de características de prueba.
+        y_test (array-like): Etiquetas reales de prueba.
+        modelos (list): Lista de modelos ajustados (deben implementar `fit` y `predict`).
+        nombres_modelos (list): Lista de nombres para identificar los modelos.
+        figsize (tuple): Tamaño del gráfico.
+
+    Retorna:
+        None: Muestra los gráficos de las matrices de confusión.
+    """
+    if len(modelos) != len(nombres_modelos):
+        raise ValueError("El número de modelos y nombres de modelos debe coincidir.")
+
+    # Configuración del gráfico
+    n_modelos = len(modelos)
+    cols = 3  # Número de columnas en el gráfico
+    rows = (n_modelos + cols - 1) // cols  # Número de filas necesarias
+
+    fig, axes = plt.subplots(rows, cols, figsize=figsize)
+    axes = axes.flatten()
+
+    for i, (modelo, nombre) in enumerate(zip(modelos, nombres_modelos)):
+        # Ajustar el modelo y generar predicciones
+        modelo.fit(X_train, y_train)
+        y_pred = modelo.predict(X_test)
+
+        # Calcular la matriz de confusión
+        cm = confusion_matrix(y_test, y_pred)
+
+        # Graficar la matriz de confusión con valores absolutos
+        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False, ax=axes[i])
+        axes[i].set_title(nombre)
+        axes[i].set_xlabel('Predicción')
+        axes[i].set_ylabel('Real')
+
+    # Eliminar ejes adicionales si hay más subplots que modelos
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.show()

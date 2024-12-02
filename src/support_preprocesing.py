@@ -19,12 +19,18 @@ import matplotlib.pyplot as plt
 
 # Imputación de nulos usando métodos avanzados estadísticos
 # -----------------------------------------------------------------------
-from sklearn.impute import SimpleImputer
-from sklearn.experimental import enable_iterative_imputer
-from sklearn.impute import IterativeImputer
-from sklearn.impute import KNNImputer
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.neighbors import LocalOutlierFactor 
+from sklearn.neighbors import LocalOutlierFactor
+from imblearn.over_sampling import SMOTE
+import pandas as pd
+from collections import Counter
+import pickle
+
+# Encoding de variables
+# -----------------------------------------------------------------------
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, LabelEncoder
+from category_encoders import TargetEncoder
+from scipy.stats import chi2_contingency
+
 
 def exploracion_basica_dataframe(dataframe):
     """
@@ -116,6 +122,24 @@ def exploracion_basica_dataframe(dataframe):
         df_counts = pd.DataFrame({"count": dataframe[col].value_counts(dropna=False),"porcentaje (%)": (dataframe[col].value_counts(dropna=False, normalize=True) * 100).round(3)})
         display(df_counts)
         print("\n ------------------------------- \n")
+
+def detector_columnas_categoricas(df,valores_unicos):
+    """
+    Devuelve las columnas numéricas con menos de 10 valores únicos.
+
+    Args:
+        df (pd.DataFrame): El DataFrame de entrada.
+        valores_unicos: Número de valores
+
+    Returns:
+        list: Lista de nombres de columnas numéricas con menos de x valores únicos.
+    """
+    numerical_columns = df.select_dtypes(include=['number'])  # Seleccionar columnas numéricas
+    columns_with_few_unique = [
+        col for col in numerical_columns.columns if numerical_columns[col].nunique() <= valores_unicos
+    ]
+    return columns_with_few_unique
+
 
 def plot_numericas(dataframe):
     df_num=dataframe.select_dtypes(include=np.number)
@@ -357,38 +381,60 @@ def comparador_estaditicos(df_list, names=None):
 
 
 # GESTION OUTIERS
+# -----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 def separar_dataframe(dataframe):
     return dataframe.select_dtypes(include = np.number), dataframe.select_dtypes(include = "O")
 
-def detectar_outliers(dataframe, color="blue", tamano_grafica=(15,10)):
-    df_num = separar_dataframe(dataframe)[0]
+def obtener_outliers_iqr(df, columna,n): #Se usa para ver los outiers por su IQR
+    """
+    Identifica los valores outliers en base al rango intercuartílico (IQR) de una columna.
 
+    Parámetros:
+    - df: DataFrame
+    - columna: Nombre de la columna a analizar (str)
+    - n: Valor multiplicador del IQR (Cuanto mayor sea menos datos te dara la funcion por que sera mas grande el rango de datos)
+    
+    Retorna:
+    - DataFrame con los valores outliers
+    """
+    # Calcular el rango intercuartílico (IQR)
+    Q1 = df[columna].quantile(0.25)  # Primer cuartil
+    Q3 = df[columna].quantile(0.75)  # Tercer cuartil
+    IQR = Q3 - Q1
+
+    # Definir los límites
+    limite_inferior = Q1 - n * IQR
+    limite_superior = Q3 + n * IQR
+
+    # Identificar las filas con valores outliers
+    outliers = df[(df[columna] < limite_inferior) | (df[columna] > limite_superior)]
+    
+    return outliers
+
+def detectar_outliers(dataframe, color="orange", tamaño_grafica=(15,10)): #Genera boxplts de las variables numericas del df
+    df_num = dataframe.select_dtypes(include=np.number)
     num_filas = math.ceil(len(df_num.columns) / 2)
-
-    fig, axes = plt.subplots(ncols=2, nrows=num_filas, figsize=tamano_grafica)
+    fig, axes = plt.subplots(nrows=num_filas, ncols=2, figsize=tamaño_grafica)
     axes = axes.flat
 
+    # Configuración de los outliers en color naranja
+    flierprops = dict(marker='o', markerfacecolor='orange', markersize=5, linestyle='none')
+
     for indice, columna in enumerate(df_num.columns):
-        sns.boxplot(
-            x=columna,
-            data=df_num,
-            ax=axes[indice],
-            color=color,
-            flierprops={"marker": "o", "markerfacecolor": "red", "markersize": 5}
-        )
-        
+        sns.boxplot(x=columna,
+                    data=df_num,
+                    ax=axes[indice],
+                    color=color,
+                    flierprops=flierprops)  # Aplica color naranja a los outliers
         axes[indice].set_title(f"Outliers de {columna}")
         axes[indice].set_xlabel("")
 
+    # Eliminar el último subplot si el número de columnas es impar
     if len(df_num.columns) % 2 != 0:
         fig.delaxes(axes[-1])
-    else:
-        pass
-
+    
     plt.tight_layout()
-    plt.show()
-
 
 def scatterplot_outliers(dataframe, combinaciones_variables, columnas_hue, palette="Set1", alpha=0.5):
     """
@@ -457,30 +503,6 @@ def gestion_nulos_lof(df, col_numericas, list_neighbors, lista_contaminacion):
         df[columna_nombre] = lof.fit_predict(df[col_numericas])
     
     return df
-
-def detectar_metricas(dataframe, color="orange", tamaño_grafica=(15,10)):
-    df_num = dataframe.select_dtypes(include=np.number)
-    num_filas = math.ceil(len(df_num.columns) / 2)
-    fig, axes = plt.subplots(nrows=num_filas, ncols=2, figsize=tamaño_grafica)
-    axes = axes.flat
-
-    # Configuración de los outliers en color naranja
-    flierprops = dict(marker='o', markerfacecolor='orange', markersize=5, linestyle='none')
-
-    for indice, columna in enumerate(df_num.columns):
-        sns.boxplot(x=columna,
-                    data=df_num,
-                    ax=axes[indice],
-                    color=color,
-                    flierprops=flierprops)  # Aplica color naranja a los outliers
-        axes[indice].set_title(f"Outliers de {columna}")
-        axes[indice].set_xlabel("")
-
-    # Eliminar el último subplot si el número de columnas es impar
-    if len(df_num.columns) % 2 != 0:
-        fig.delaxes(axes[-1])
-    
-    plt.tight_layout()
 
 def detectar_outliers_categoricos(dataframe, threshold=0.05):
     """
@@ -561,107 +583,58 @@ def generador_boxplots(df_list):
     plt.tight_layout()
     plt.show()
 
-# ENCODING
+# FASE DE ENCODING
+# -------------------------------------------------------------------------------------------------------------------------------------------------------
 
-def crear_boxplot(dataframe, lista_variables, variable_respuesta, whis=1.5, color="blue", tamano_grafica_base=(20, 5)):
+def detectar_orden_cat(df, var_res):
     """
-    Crea un boxplot para cada variable categórica en el conjunto de datos con una visualización mejorada.
+    Detecta si las variables categóricas tienen un orden significativo en relación con una variable objetivo.
 
     Parámetros:
-    - dataframe: DataFrame que contiene los datos.
-    - lista_variables: Lista de variables categóricas para generar los boxplots.
-    - variable_respuesta: Variable respuesta para graficar en el eje y.
-    - whis: El ancho de los bigotes. Por defecto es 1.5.
-    - color: Color de los boxplots. Por defecto es "blue".
-    - tamano_grafica_base: Tamaño base de cada fila de gráficos. Por defecto es (20, 5).
+    - df: DataFrame que contiene los datos.
+    - var_res: Nombre de la variable respuesta (objetivo).
+
+    Imprime los resultados de cada variable y muestra dos listas finales:
+    - Categorías con orden significativo.
+    - Categorías sin orden significativo.
     """
-    num_variables = len(lista_variables)
-    num_filas = math.ceil(num_variables / 2)
     
-    # Ajustar el tamaño de la figura dinámicamente
-    tamano_grafica = (tamano_grafica_base[0], tamano_grafica_base[1] * num_filas)
-    
-    fig, axes = plt.subplots(num_filas, 2, figsize=tamano_grafica)
-    axes = axes.flat
+    # Listas para almacenar los resultados
+    categorias_con_orden = []  # Variables categóricas que tienen un orden significativo
+    categorias_sin_orden = []  # Variables categóricas que no tienen un orden significativo
 
-    for indice, columna in enumerate(lista_variables):
-        sns.boxplot(
-            y=variable_respuesta,
-            x=columna,
-            data=dataframe,
-            color=color,
-            ax=axes[indice],
-            whis=whis,
-            flierprops={'markersize': 4, 'markerfacecolor': 'orange'}
-        )
-        axes[indice].set_title(f'Boxplot: {columna}', fontsize=12)  # Título de cada subgráfico
-        axes[indice].tick_params(axis='x', rotation=45)  # Rotar etiquetas del eje X
+    # Seleccionar las columnas categóricas del DataFrame
+    lista_categoricas=df.select_dtypes(["object", "category"])
 
-    # Ocultar los ejes restantes si hay un número impar de gráficos
-    for ax in axes[num_variables:]:
-        ax.axis('off')
+    # Iterar sobre cada columna categórica
+    for categorica in lista_categoricas:
+        print(f"Estamos evaluando la variable: {categorica.upper()}")
+        
+        # Crear una tabla cruzada entre la variable categórica y la variable respuesta
+        df_cross_tab = pd.crosstab(df[categorica], df[var_res])
+        display(df_cross_tab)  # Mostrar la tabla cruzada
 
-    # Ajustar diseño general
-    fig.tight_layout()
-    plt.show()
+        # Realizar la prueba de chi-cuadrado para evaluar independencia
+        chi2, p, dof, expected = chi2_contingency(df_cross_tab)
 
+        # Evaluar el p-valor para determinar si hay orden
+        if p < 0.05:  # Si el p-valor es menor a 0.05, rechazamos la hipótesis de independencia
+            print(f"La variable categórica {categorica.upper()} sí tiene orden\n")
+            categorias_con_orden.append(categorica)  # Agregar a la lista de categorías con orden
+        else:
+            print(f"La variable categórica {categorica.upper()} no tiene orden\n")
+            categorias_sin_orden.append(categorica)  # Agregar a la lista de categorías sin orden
 
-def crear_barplot(dataframe, lista_variables, variable_respuesta, paleta="viridis", tamano_grafica_base=(20, 10)):
-    """
-    Crea un barplot para cada variable categórica en el conjunto de datos con una visualización mejorada.
-
-    Parámetros:
-    - dataframe: DataFrame que contiene los datos.
-    - lista_variables: Lista de variables categóricas para generar los barplots.
-    - variable_respuesta: Variable respuesta para calcular la media en cada categoría.
-    - paleta: Paleta de colores para el barplot. Por defecto es "viridis".
-    - tamano_grafica_base: Tamaño base de cada fila de gráficos. Por defecto es (20, 5).
-    """
-    num_variables = len(lista_variables)
-    num_filas = math.ceil(num_variables / 2)
-    
-    # Ajustar tamaño de la figura dinámicamente
-    tamano_grafica = (tamano_grafica_base[0], tamano_grafica_base[1] * num_filas)
-    
-    fig, axes = plt.subplots(num_filas, 2, figsize=tamano_grafica)
-    axes = axes.flat
-
-    for indice, columna in enumerate(lista_variables):
-        # Calcular la media agrupada por categorías
-        categoria_mediana = (
-            dataframe.groupby(columna)[variable_respuesta]
-            .mean()
-            .reset_index()
-            .sort_values(by=variable_respuesta)
-        )
-
-        # Crear el barplot
-        sns.barplot(
-            x=categoria_mediana[columna],
-            y=categoria_mediana[variable_respuesta],
-            palette=paleta,
-            ax=axes[indice],
-            errorbar='ci'
-        )
-
-        # Agregar títulos y ajustar etiquetas
-        axes[indice].set_title(f"Media de {variable_respuesta} por {columna}", fontsize=12)
-        axes[indice].tick_params(axis='x', rotation=45)
-
-    # Ocultar los ejes sobrantes si el número de gráficos es impar
-    for ax in axes[num_variables:]:
-        ax.axis('off')
-
-    # Ajustar diseño general
-    fig.tight_layout()
-    plt.show()
-
-from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, LabelEncoder
-from category_encoders import TargetEncoder
+    # Imprimir los resultados finales
+    print("\n=== Resultados finales ===")
+    print("Categorías con orden:")
+    print(categorias_con_orden)  # Lista de categorías con orden significativo
+    print("\nCategorías sin orden:")
+    print(categorias_sin_orden)  # Lista de categorías sin orden significativo
 
 def one_hot_encoding(dataframe, columns):
     """
-    Realiza codificación one-hot en las columnas especificadas.
+    Realiza codificación one-hot en las columnas especificadas y guarda el encoder en un archivo .pkl.
 
     Args:
         dataframe (pd.DataFrame): DataFrame de pandas.
@@ -670,36 +643,28 @@ def one_hot_encoding(dataframe, columns):
     Returns:
         pd.DataFrame: DataFrame con codificación one-hot aplicada.
     """
-    one_hot_encoder = OneHotEncoder()
+    # Inicializar OneHotEncoder
+    one_hot_encoder = OneHotEncoder(sparse_output=False)
+
+    # Aplicar codificación one-hot
     trans_one_hot = one_hot_encoder.fit_transform(dataframe[columns])
-    oh_df = pd.DataFrame(trans_one_hot.toarray(), columns=one_hot_encoder.get_feature_names_out(columns))
+    oh_df = pd.DataFrame(trans_one_hot, columns=one_hot_encoder.get_feature_names_out(columns))
+    
+    # Combinar el DataFrame original con el DataFrame codificado
     dataframe = pd.concat([dataframe.reset_index(drop=True), oh_df.reset_index(drop=True)], axis=1)
+
+    # Eliminar las columnas originales
     dataframe.drop(columns=columns, inplace=True)
+    encoder_path="../encoders/one_hot_encoder.pkl"
+    # Guardar el encoder en un archivo .pkl
+    with open(encoder_path, 'wb') as file:
+        pickle.dump(one_hot_encoder, file)
+    print(f"Encoder guardado en: {encoder_path}")
     return dataframe
-
-
-def get_dummies_encoding(dataframe, columns, prefix=None, prefix_sep="_"):
-    """
-    Realiza codificación get_dummies en las columnas especificadas.
-
-    Args:
-        dataframe (pd.DataFrame): DataFrame de pandas.
-        columns (list): Lista de columnas a codificar.
-        prefix (str o dict, opcional): Prefijo para las columnas codificadas.
-        prefix_sep (str): Separador entre el prefijo y la columna original.
-
-    Returns:
-        pd.DataFrame: DataFrame con codificación get_dummies aplicada.
-    """
-    df_dummies = pd.get_dummies(dataframe[columns], dtype=int, prefix=prefix, prefix_sep=prefix_sep)
-    dataframe = pd.concat([dataframe.reset_index(drop=True), df_dummies.reset_index(drop=True)], axis=1)
-    dataframe.drop(columns=columns, inplace=True)
-    return dataframe
-
 
 def ordinal_encoding(dataframe, columns, categories):
     """
-    Realiza codificación ordinal en las columnas especificadas.
+    Realiza codificación ordinal en las columnas especificadas y guarda el encoder en un archivo .pkl.
 
     Args:
         dataframe (pd.DataFrame): DataFrame de pandas.
@@ -709,14 +674,23 @@ def ordinal_encoding(dataframe, columns, categories):
     Returns:
         pd.DataFrame: DataFrame con codificación ordinal aplicada.
     """
+    # Inicializar OrdinalEncoder
     ordinal_encoder = OrdinalEncoder(categories=categories, dtype=float, handle_unknown="use_encoded_value", unknown_value=np.nan)
+
+    # Codificar las columnas
     dataframe[columns] = ordinal_encoder.fit_transform(dataframe[columns])
+    encoder_path="../encoders/ordinal_encoder.pkl"
+    # Guardar el encoder en un archivo .pkl
+    with open(encoder_path, 'wb') as file:
+        pickle.dump(ordinal_encoder, file)
+    print(f"Encoder guardado en: {encoder_path}")
+
     return dataframe
 
 
 def label_encoding(dataframe, columns):
     """
-    Realiza codificación label en las columnas especificadas.
+    Realiza codificación label en las columnas especificadas y guarda el encoder en un archivo .pkl.
 
     Args:
         dataframe (pd.DataFrame): DataFrame de pandas.
@@ -725,15 +699,26 @@ def label_encoding(dataframe, columns):
     Returns:
         pd.DataFrame: DataFrame con codificación label aplicada.
     """
-    label_encoder = LabelEncoder()
+    # Diccionario para guardar el LabelEncoder para cada columna
+    label_encoders = {}
+
+    # Aplicar codificación label
     for col in columns:
+        label_encoder = LabelEncoder()
         dataframe[col] = label_encoder.fit_transform(dataframe[col])
+        label_encoders[col] = label_encoder  # Guardar el encoder para esta columna
+    encoder_path="../encoders/label_encoders.pkl"
+    # Guardar los LabelEncoders en un archivo .pkl
+    with open(encoder_path, 'wb') as file:
+        pickle.dump(label_encoders, file)
+    print(f"Encoders guardados en: {encoder_path}")
+
     return dataframe
 
 
 def target_encoding(dataframe, columns, target):
     """
-    Realiza codificación target en las columnas especificadas.
+    Realiza codificación target en las columnas especificadas y guarda el encoder en un archivo .pkl.
 
     Args:
         dataframe (pd.DataFrame): DataFrame de pandas.
@@ -743,14 +728,29 @@ def target_encoding(dataframe, columns, target):
     Returns:
         pd.DataFrame: DataFrame con codificación target aplicada.
     """
+    # Verificar que las columnas y el target existen en el DataFrame
+    if not set(columns).issubset(dataframe.columns):
+        raise ValueError(f"Algunas columnas de {columns} no están en el DataFrame.")
+    if target not in dataframe.columns:
+        raise ValueError(f"La variable objetivo '{target}' no está en el DataFrame.")
+
+    # Inicializar TargetEncoder
     target_encoder = TargetEncoder(cols=columns)
+
+    # Codificar las columnas
     dataframe[columns] = target_encoder.fit_transform(dataframe[columns], dataframe[target])
+    encoder_path="../encoders/target_encoding.pkl"
+    # Guardar el encoder en un archivo .pkl
+    with open(encoder_path, 'wb') as file:
+        pickle.dump(target_encoder, file)
+    print(f"Encoder guardado en: {encoder_path}")
+
     return dataframe
 
 
 def frequency_encoding(dataframe, columns):
     """
-    Realiza codificación de frecuencia en las columnas especificadas.
+    Realiza codificación de frecuencia en las columnas especificadas y guarda los mapeos en un archivo .pkl.
 
     Args:
         dataframe (pd.DataFrame): DataFrame de pandas.
@@ -759,7 +759,51 @@ def frequency_encoding(dataframe, columns):
     Returns:
         pd.DataFrame: DataFrame con codificación de frecuencia aplicada.
     """
+    # Diccionario para almacenar los mapeos de frecuencia
+    freq_mappings = {}
+
+    # Aplicar codificación de frecuencia
     for col in columns:
         freq_map = dataframe[col].value_counts(normalize=True)
+        freq_mappings[col] = freq_map  # Guardar el mapeo
         dataframe[col] = dataframe[col].map(freq_map)
+    encoder_path="../encoders/freq_mappings.pkl"
+    # Guardar los mapeos de frecuencia en un archivo .pkl
+    with open(encoder_path, 'wb') as file:
+        pickle.dump(freq_mappings, file)
+    print(f"Mapeos de frecuencia guardados en: {encoder_path}")
+
     return dataframe
+
+# BALANCEO 
+
+def balancear_datos_con_smote(dataframe, variable_respuesta, ruta_archivo):
+    """
+    Aplica SMOTE para balancear las clases en la variable objetivo y guarda los datos balanceados.
+
+    Parámetros:
+        dataframe (pd.DataFrame): Dataset encodeado con desbalanceo en la variable objetivo.
+        variable_respuesta (str): Nombre de la columna objetivo.
+        ruta_archivo (str): Ruta del archivo donde se guardará el dataset balanceado en formato .pkl.
+    
+    Retorna:
+        None: Guarda el dataset balanceado en un archivo .pkl.
+    """
+    # Separar características (X) y la variable objetivo (y)
+    X = dataframe.drop(columns=[variable_respuesta])
+    y = dataframe[variable_respuesta]
+    
+    # Aplicar SMOTE
+    print("Distribución antes de SMOTE:", Counter(y))
+    smote = SMOTE(random_state=42)
+    X_balanced, y_balanced = smote.fit_resample(X, y)
+    print("Distribución después de SMOTE:", Counter(y_balanced))
+    
+    # Combinar las características balanceadas con la variable objetivo
+    df_balanced = pd.concat([pd.DataFrame(X_balanced, columns=X.columns), 
+                             pd.DataFrame(y_balanced, columns=[variable_respuesta])], axis=1)
+    
+    # Guardar el dataset balanceado en un archivo .pkl
+    with open(ruta_archivo, 'wb') as file:
+        pickle.dump(df_balanced, file)
+    print(f"Dataset balanceado guardado en: {ruta_archivo}")
