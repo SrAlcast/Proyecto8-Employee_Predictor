@@ -11,8 +11,6 @@ src_path = "../src/"
 sys.path.append(src_path)
 import soporte_stramlit as sp  
 
-
-
 # Cargar las listas de opciones
 lista_encuesta=[1,2,3,4]
 lista_genero=['Female', 'Male']
@@ -47,7 +45,6 @@ st.header("¿Como es el empleado? 📑")
 
 st.markdown("#### 1. Satisfacción y Balance")
 col1,col2,col3,col4 = st.columns(4)
-
 with col1:
     EnvironmentSatisfaction=st.selectbox("Satisfacción con el entorno:",lista_encuesta)
 with col2:
@@ -64,18 +61,18 @@ with col5:
 with col6:
     Gender = st.selectbox("Género:",lista_genero)
 with col7:
-    MaritalStatus = st.selectbox("Estado civil",lista_estado_civil)
+    MaritalStatus = st.selectbox("Estado civil:",lista_estado_civil)
 with col8:
-    DistanceFromHome= st.number_input("Distancia desde el hogar", min_value=1, max_value=29, value=28, step=1)
+    DistanceFromHome= st.number_input("Distancia desde el hogar:", min_value=1, max_value=29, value=28, step=1)
 
 st.markdown("#### 3. Información Laboral")
 col9,col10,col11 = st.columns(3)
 with col9:
     Department = st.selectbox("Departamento:",lista_departamentos)
 with col10:
-    JobLevel = st.selectbox("Nivel de trabajo:",lista_level)
-with col11:
     JobRole = st.selectbox("Rol laboral:",lista_job_role)
+with col11:
+    JobLevel = st.selectbox("Nivel de responsabilidad:",lista_level)
 
 col12,col13,col14 = st.columns(3)
 with col12:
@@ -92,7 +89,7 @@ with col15:
 with col16:
     EducationField = st.selectbox("Área de educación:",lista_educacion)
 with col17:
-    TrainingTimesLastYear = st.number_input("Veces entrenado el último año:",min_value=0, max_value=6, value=6, step=1)
+    TrainingTimesLastYear = st.number_input("Formaciones en el último año:",min_value=0, max_value=6, value=6, step=1)
 
 st.markdown("#### 5. Compensación y Beneficios")
 col18,col19,col20 = st.columns(3)
@@ -106,11 +103,11 @@ with col20:
 st.markdown("#### 6. Experiencia Laboral")
 col21,col22,col23 = st.columns(3)
 with col21:
-    NumCompaniesWorked = st.number_input("Número de empresas trabajadas:", min_value=18, max_value=60, value=42, step=1)
+    TotalWorkingYears = st.number_input("Total años trabajados:",min_value=0, max_value=40, value=2, step=1)
 with col22:
-    TotalWorkingYears = st.selectbox("Total años trabajados:",lista_genero)
+    NumCompaniesWorked = st.number_input("Número de empresas trabajadas:", min_value=0, max_value=9, value=2, step=1)
 with col23:
-    BusinessTravel = st.selectbox("Frecuencia de viaje:",lista_travel)
+    BusinessTravel = st.selectbox("Frecuencia de viajes:",lista_travel)
 
 st.markdown("#### 7. Evaluación y Desempeño")
 PerformanceRating = st.number_input("Calificación de desempeño:",min_value=3, max_value=4, value=3, step=1)
@@ -124,7 +121,7 @@ if st.button("Predecir"):
                                         StockOptionLevel,NumCompaniesWorked,TotalWorkingYears,BusinessTravel,PerformanceRating)
     
     # Mostrar el resultado
-    
+    prediction=1
     if prediction==1:
         st.markdown("#### Se va de la empresa")
 
